@@ -11,7 +11,9 @@ The folder [`data`](data) contains the raw fmri data file, the stimulus onset fi
 
 ## Installation
 
-Download the zipped code and extract on your compùter. The script runs in R and requires the oro.nifti package. 
+Download the zipped code and extract on your computer. 
+
+Open the script [`subj23_script.R`](scripts/subj23_script.R) in Rstudio. Ensure the 
 
 
 
