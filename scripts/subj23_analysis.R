@@ -9,11 +9,11 @@ rm(list=ls(all=TRUE))
 library(oro.nifti)
 
 # read the data for this subject
-niftifile = paste("/media/nielsj/fMRI_disk2/Chipotle_run1_only/subj23/despiked_mcf_tempfilt.nii.gz", sep="")
+niftifile = paste("data/despiked_mcf_tempfilt.nii.gz", sep="")
 X = readNIfTI(niftifile)
 
 # read the onsets (from a standard FSL formatted onset file)
-onsetfile = paste("/Data/fMRI_DATA/Chipotle_fMRI/subj23/onsets/run1_naming.txt", sep="")
+onsetfile = paste("data/run1_naming.txt", sep="")
 onsets = read.table(onsetfile)
 onsets = onsets[,1]
 
@@ -73,7 +73,7 @@ for (i in 1:length(slicesampletimes)){
 }
 
 # Finally, data were motion corrected, so we need to update our acquisition times with temporal corrections
-yardfile = paste("/media/nielsj/fMRI_disk2/Chipotle_run1_only/subj23/yardstick_4D_total.nii.gz",sep="")
+yardfile = paste("data/yardstick_4D_total.nii.gz",sep="")
 M = readNIfTI(yardfile)
 
 corslicets=list()
