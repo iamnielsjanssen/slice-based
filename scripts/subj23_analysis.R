@@ -10,7 +10,7 @@ rm(list=ls(all=TRUE))
 library(oro.nifti)
 
 # read the data for this subject
-niftifile = paste("data/despiked_mcf_tempfilt.nii.gz", sep="")
+niftifile = paste("data/subj23_run1_truncated.nii.gz", sep="")
 X = readNIfTI(niftifile)
 
 # read the onsets (from a standard FSL formatted onset file)
@@ -91,7 +91,6 @@ for (s in 1:num_slices){
   corsampletimes[[s]] = cortimes
 }
 
-
 ####################
 ### EXTRACT SIGNAL - SLICE BASED METHOD
 ####################
@@ -130,8 +129,6 @@ for (s in 1:length(stim_times)){
     D[nrow(D)+1,]=newline
   }
 }
-
-
 
 ##################################
 ### DATA BINNING
@@ -188,7 +185,6 @@ for (i in 1:num_slices){
     }
   }
 }
-
 
 ###############################
 ### GRAPHS
