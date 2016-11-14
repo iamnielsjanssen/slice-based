@@ -17,8 +17,8 @@ Open the script [`subj23_analysis.R`](scripts/subj23_analysis.R) in Rstudio. Ens
 
 ## Usage
 
-Select the whole script and press 'run'. This will produce the graph of subject 23 that is also included in the paper. 
+In Rstudio, select the whole script and press 'run'. Assuming the path to folders are set correctly, this will produce the graph of subject 23 that is also included in the paper. 
 
-Can you adjust the temporal resolution by which the signal is extracted by changing the 'num_bins' parameter in the 'Set some parameters' section in the beginning of the script. 
+You can adjust the temporal resolution by which the BOLD signal is extracted by changing the 'num_bins' parameter in the 'Set some parameters' section in the beginning of the script. For example, given that the epoch length is $7\timesTR$ 
 
 This script is meant to provide insight into how the Slice-Based fMRI data analysis framework. It is not intended to be used in a full-scale fMRI data analysis as R is likely too slow. We have a Python implementation for this in the works. Please let me know of any errors, bugs, or questions. 
