@@ -7,7 +7,7 @@ Janssen, N., Hernández-Cabrera, JA., Ezama Foronda, L.
 "Improving the temporal accuracy of functional Magnetic Resonance Imaging"
 bioRxiv doi: http://dx.doi.org/10.1101/073437
 
-The folder [`data`](dataset) contains the raw fmri data file, the stimulus onset file, and the yardstick for the temporal correction in motion correction. The folder [`script`](script) contains the R script. 
+The folder [`data`](data) contains the raw fmri data file, the stimulus onset file, and the yardstick for the temporal correction in motion correction. The folder [`script`](scripts) contains the R script. 
 
 ## Installation
 
