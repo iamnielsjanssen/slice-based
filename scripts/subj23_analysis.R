@@ -3,7 +3,8 @@
 # If you use this code for analysis that is published in an indexed journal or repository, please cite the following article:
 # Janssen, Hernández-Cabrera, & Ezama "Improving the temnporal accuracy of functional Magnetic Resonance Imaging"
 # doi: http://dx.doi.org/10.1101/073437
-#
+
+# Niels Janssen, November 2016
 
 rm(list=ls(all=TRUE)) 
 library(oro.nifti)
