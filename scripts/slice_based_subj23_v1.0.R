@@ -1,0 +1,241 @@
+# Script for doing Slice-Based analysis of fMRI data. 
+# 
+# If you use this code for analysis that is published in an indexed journal or repository, please cite the following article:
+# Janssen, Hernández-Cabrera, & Ezama "Improving the temnporal accuracy of functional Magnetic Resonance Imaging"
+# doi: http://dx.doi.org/10.1101/073437
+#
+# Please make sure this scripts loads the *three* data files correctly: edit lines 12, 22-24.
+#
+# Niels Janssen, January 2017
+
+rm(list=ls(all=TRUE)) 
+source("/home/nielsj/Desktop/slice-based-master/scripts/slice_based_functions.R")
+
+#####
+# SET FILE LOCATIONS
+# 1. niftifile = standard 4D fMRI data file in single file nifti format
+# 2. onsetfile = standard FSL 3-column onset file in text format
+# 3. yardfile = Slice-based 4D nifti file for obtaining voxel acquistion times after motion correction
+#####
+
+niftifile = paste("/home/nielsj/Desktop/slice-based-master/data/subj23_run1_truncated.nii.gz", sep="")
+onsetfile = paste("/home/nielsj/Desktop/slice-based-master/data/run1_naming.txt", sep="")
+yardfile = paste("/home/nielsj/Desktop/slice-based-master/data/yardstick_4D_total.nii.gz",sep="")
+
+cat("Loading files...\n")
+X = readNIfTI(niftifile)
+onsets = sort(read.table(onsetfile)[,1]) # only the first column matters
+M = readNIfTI(yardfile)
+
+#####
+# SET USER DEFINED PARAMETERS
+# 1. Set the TR in seconds
+# 2. Set the epoch_length in seconds (best to use multiples of the TR)
+# 3. Set the number of time bins in the epoch
+# (The temporal resolution of the epoch is equal to the epoch length divided by the number of time bins)
+# 4. Set if data were acquired interleaved (1 = yes, 0 = no)
+# 5. Set if data were acquired top-down (1 = yes, 0 = no)
+# 6. Set if data were motion corrected and yardstick volume is available (1 = yes, 0 = no)
+#####
+TR=X@pixdim[5] # The TR in seconds (also equal to X@pixdim[5])
+epoch_length=7*TR # Should be equal to the ISI
+num_bins = 7 # Increasing the number of bins in the epoch means increasing the temporal resolution.
+cat("Temporal resolution:",epoch_length/num_bins,"s.\n")
+
+topdown=1 # were slices acquired topdown or bottom up?
+interleaved=1 # were slices acquired interleaved or sequential?
+motion_corrected=1 # is there a yardstick motion correction brain available?
+
+baseline_int = c(TR,0) # use interval of -TR until 2.5 s around stimulus onset for BASELINE (timepoint t=1)
+
+save_on = 1 # save the output yes or no
+
+##############################################
+# START PROGRAM
+##############################################
+
+#####
+# EXTRACT DATA PARAMTERS
+#####
+x_dim=dim(X)[1] # in-plane resolution x
+y_dim=dim(X)[2] # in-plane resolution y
+num_slices=dim(X)[3] # number of slices
+num_timepoints=dim(X)[4] # number of time points (TRs)
+slice_time=TR/num_slices # time between slice acquisitions in seconds
+
+#####
+# SETUP TIME VECTORS
+#####
+
+# The list of slice sample times
+slicesampletimes=list()
+
+# Set up a basic slice acquisition times vector that assumes sequential, bottom up acquisition
+basicslicesampletimes = lapply(1:num_slices, function (i) seq(slice_time*(i-1),num_timepoints*TR,TR) )
+basicslicesampletimes[[1]] = basicslicesampletimes[[1]][-length(basicslicesampletimes[[1]])]
+
+# These basic slice acuiqisition times need to be changed if data were acquired interleaved
+odd = seq(1,num_slices,2)
+even = seq(2,num_slices,2)
+intorder = c(odd,even)
+interleavedlist=list()
+for (i in 1:length(basicslicesampletimes)){
+  newpos=intorder[i]
+  interleavedlist[[newpos]]=basicslicesampletimes[[i]]
+}
+
+# And if they were acquired top-down
+revorder=rev(seq(1,num_slices))
+revinterleavedlist=list()
+for (i in 1:length(basicslicesampletimes)){
+  newpos=revorder[i]
+  revinterleavedlist[[newpos]]=interleavedlist[[i]]
+}
+
+if(topdown & interleaved){
+  slicesampletimes = revinterleavedlist
+} else if (!(topdown) & interleaved){
+  slicesampletimes = interleavedlist
+} else { 
+  slicesampletimes = basicslicesampletimes}
+
+##################
+# The data containers for collecting the statistics 
+Ybeta = array(0,dim=c(x_dim,y_dim,num_slices,num_bins + 1))
+Yse = array(0,dim=c(x_dim,y_dim,num_slices,num_bins + 1))
+Ytval = array(0,dim=c(x_dim,y_dim,num_slices,num_bins + 1))
+Ydof = array(0,dim=c(x_dim,y_dim,num_slices,num_bins + 1))
+
+######################
+# determine slices that actually have data (saves computation time!)
+slices_with_data = which(unlist(lapply(1:num_slices, function (x) length(unique(as.vector(X[,,x,])))>1)))
+sub_num_slices = max(slices_with_data)
+
+# Select which voxels to analyze.
+# Note this is like masking and restricts the analysis to relevant voxels (i.e., those with signal)
+coordinates = unique(which(X[,,,num_timepoints/2]>700,arr.ind = TRUE)[,1:2])
+
+# Start the main loop, epoch data and do voxel-based timepoint by timepoint stats
+ptm <- proc.time() # check time
+for (c in 1:nrow(coordinates)){
+  x=coordinates[c,1]
+  y=coordinates[c,2]
+  cat(c,"/",nrow(coordinates), ":", x,y,"\n")
+  
+  #####
+  # Extract the time course for this voxel for each slice
+  #####
+  slicets = lapply(1:num_slices, function (i) X[x,y,i,] )
+  slicets = rapply(slicets, f=function(x) ifelse(is.nan(x),0,x), how="replace" ) # this just replaces each NaN with 0.
+  
+  # Apply yardstick motion corrected times
+  # If a voxel was acquired at a different slice at a particular moment in time (i.e., there was motion), 
+  # we update that voxel's acquisition vector. Yardstick brain gives info how motion *correction* was applied
+  # So we need to apply some transform to figure out at which slice voxel was acquired.
+  if(motion_corrected){
+    corslicets=lapply(1:num_slices, function (i) i + (-1 * ((M[x,y,i,] + 1) - i)))
+    corslicets[[1]]=rep(1,num_timepoints) # set hard boundaries, this is outside of brain
+    corslicets[[num_slices]]=rep(num_slices,num_timepoints)
+    
+    corsampletimes = list()
+    for (s in 1:num_slices){
+      cortimes=c()
+      for (i in 1:num_timepoints){
+        cortimes=c(cortimes,slicesampletimes[[corslicets[[s]][i]]][i])
+      }
+      corsampletimes[[s]] = cortimes
+    }
+    slicesampletimes=corsampletimes
+  }
+
+  ###########
+  # EPOCH DATA USING SLICE-BASED METHOD
+  ###########
+  
+  # setup a dataframe with the (x,y) timeseries for each slice
+  slices = gl(num_slices, num_timepoints)
+  times = as.numeric(unlist(slicesampletimes))
+  signal = unlist(slicets)
+  
+  # align the actual onsets with the time frame of the current data
+  stim_times = onsets
+  stims_aligned = unlist(lapply(1:length(stim_times), function (i) times[which(abs(times-stim_times[i])==min(abs(times-stim_times[i])))][1] ))
+  
+  times = round(times,3)
+  df = data.table(times=times, slices=slices, signal=signal) # use data.table
+  setkey(df, times)
+  
+  # epoch the data into a new data frame D
+  D = vector("list", length(stim_times)) # pre-allocate the list
+  for (s in 1:length(stim_times)){
+    epoch_times = round(seq(stims_aligned[s] - baseline_int[1], stims_aligned[s]+epoch_length, slice_time),3)
+    epoch_times = epoch_times[! epoch_times %in% setdiff(epoch_times, times)] # remove missing values due to motion correction
+    
+    a = df[.(epoch_times)] # select all epoch times
+    a$rel_time = a$times - stims_aligned[s] # compute relative times
+    a$epoch = s # get epoch number
+    D[[s]] = a # save in list
+  }
+  D = rbindlist(D)
+  names(D)=c("stim_times","slicenum","value","rel_time","epoch")
+  
+  bins = determine_bins(D,num_bins, baseline_int[2])
+  E = merge(D,bins, by="rel_time")
+  
+  #########################################
+  # Slice-Based signal extraction using time point-by-time point with Baseline as time point 1 in epoch
+  #########################################
+  timepoints=sort(unique(E$time_bin))
+  
+  models = vector("list",sub_num_slices)
+  setkey(E, slicenum)
+  
+  E$fac = ifelse(E$time_bin==1,1,2)
+  
+  for (i in 1:sub_num_slices){
+    Esub = E[slicenum==i]
+    tzero = Esub[time_bin==1]
+    models[[i]] = lapply(timepoints[-1], fitonemodel, Esub, tzero) # main analysis function
+  }
+ 
+  # copy stats into arrays
+  for (i in 1:sub_num_slices){
+    Ybeta[x,y,i,] = c(0,unlist(lapply(models[[i]], function(x) {if(!is.null(unlist(x))){coef(summary(x))['fac','Estimate']}else{0}})))
+    Yse[x,y,i,] = c(0,unlist(lapply(models[[i]], function(x) {if(!is.null(unlist(x))){coef(summary(x))['fac','Std. Error']}else{0}})))
+    Ytval[x,y,i,] = c(0,unlist(lapply(models[[i]], function(x) {if(!is.null(unlist(x))){coef(summary(x))['fac','t value']}else{0}})))
+    Ydof[x,y,i,] = c(0,unlist(lapply(models[[i]], function(x) {if(!is.null(unlist(x))){nobs(x)}else{0}}))) # for lm
+  }
+}
+timing = proc.time() - ptm
+cat("Time taken:",timing[3]/60,"min.\n")
+
+###############################
+### OUTPUTTING TO NIFTIS
+###############################
+Ybeta = nifti(Ybeta)
+Yse = nifti(Yse)
+Ytval = nifti(Ytval)
+Ydof = nifti(Ydof)
+# copy header info from original nifti
+for (slot in slotNames(X)) {
+  if (slot==".Data" || slot=="dim_" || slot=="extensions"){}
+  else{
+    slot(Ybeta,slot, check = TRUE) = slot(X, slot)
+    slot(Yse,slot, check = TRUE) = slot(X, slot)
+    slot(Ytval,slot, check = TRUE) = slot(X, slot)
+    slot(Ydof,slot, check = TRUE) = slot(X, slot)
+  }
+}
+
+if(save_on){
+cat("Writing output files...\n")
+  outnamebeta=paste("/home/nielsj/Desktop/slice-based-master/data/out_beta_bins",num_bins,sep="")
+  outnamese=paste("/home/nielsj/Desktop/slice-based-master/data/out_se_bins",num_bins,sep="")
+  outnametval=paste("/home/nielsj/Desktop/slice-based-master/data/out_tvals_bins",num_bins,sep="")
+  outnamedof=paste("/home/nielsj/Desktop/slice-based-master/data/out_dof_bins",num_bins,sep="")
+
+writeNIfTI(Ybeta, filename = outnamebeta, verbose=FALSE)
+writeNIfTI(Yse, filename = outnamese, verbose=FALSE)
+writeNIfTI(Ytval, filename = outnametval, verbose=FALSE)
+writeNIfTI(Ydof, filename = outnamedof, verbose=FALSE)
+}
